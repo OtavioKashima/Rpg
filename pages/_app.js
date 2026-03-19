@@ -1,5 +1,12 @@
-import "@/styles/globals.css";
+import { GameProvider } from '../contexts/gameContext';
+import '../styles/globals.css';
 
-export default function App({ Component, pageProps }) {
-  return <Component {...pageProps} />;
+function MyApp({ Component, pageProps }) {
+  return (
+    <GameProvider>
+      <Component {...pageProps} />
+    </GameProvider>
+  );
 }
+
+export default MyApp;
