@@ -1,3 +1,4 @@
+"use client";
 import { useEffect, useRef, useState } from 'react';
 
 const CLASSES = {
@@ -12,7 +13,10 @@ export default function OnePieceArena() {
   // Estados do React
   const [appState, setAppState] = useState('MENU'); // MENU, PLAYING, GAMEOVER
   const [selectedClass, setSelectedClass] = useState('cortante');
-  const [cursorStyle, setCursorStyle] = useState('default');
+  
+  // AQUI: Cursor padrão é a Mãozinha, com fallback para 'auto'
+  const [cursorStyle, setCursorStyle] = useState("url('/cursor-hand.png'), auto");
+  
   const [isShopOpen, setIsShopOpen] = useState(false);
   const [hudData, setHudData] = useState({ berris: 0, level: 1, xp: 0, maxXp: 100, wave: 1, hp: 100, maxHp: 100, className: '' });
 
@@ -36,7 +40,7 @@ export default function OnePieceArena() {
       p.berris -= 30; p.attackSpeed += 0.3;
     } else if (itemType === 'meat' && p.berris >= 20) {
       p.berris -= 20; 
-      p.hp = Math.min(p.hp + 50, p.maxHp); // Carne cura 50!
+      p.hp = Math.min(p.hp + 50, p.maxHp);
     } else {
       alert("Berris insuficientes!"); return;
     }
@@ -58,7 +62,7 @@ export default function OnePieceArena() {
     gameState.current.isShopOpen = false;
   };
 
-  // --- MOTOR GRÁFICO (Só roda quando appState === 'PLAYING') ---
+  // --- MOTOR GRÁFICO ---
   useEffect(() => {
     if (appState !== 'PLAYING') return;
 
@@ -104,10 +108,15 @@ export default function OnePieceArena() {
 
     // --- CONTROLES ---
     const handleMouseMove = (e) => { mouse.x = e.clientX; mouse.y = e.clientY; };
+    
     const handleContextMenu = (e) => {
       e.preventDefault();
       if (gameState.current.isShopOpen) return;
-      isAwaitingAttackClick = false; setCursorStyle('default');
+      isAwaitingAttackClick = false; 
+      
+      // Volta para o cursor da mão ao cancelar o ataque
+      setCursorStyle("url('/cursor-hand.png'), auto");
+      
       let targetFound = false;
 
       for (let [id, enemy] of enemies) {
@@ -138,13 +147,21 @@ export default function OnePieceArena() {
         if (newState) { player.targetId = null; player.targetX = player.x; player.targetY = player.y; }
       }
       if (key === 'a' && !gameState.current.isShopOpen) {
-        isAwaitingAttackClick = true; setCursorStyle('crosshair');
+        isAwaitingAttackClick = true; 
+        
+        // AQUI: Troca para a Espada quando aperta 'A'
+        // O "0 0" indica a ponta do cursor (hotspot)
+        setCursorStyle("url('/cursor-sword.png') 0 0, crosshair");
       }
     };
 
     const handleMouseDown = (e) => {
       if (e.button === 0 && isAwaitingAttackClick && !gameState.current.isShopOpen) {
-        isAwaitingAttackClick = false; setCursorStyle('default');
+        isAwaitingAttackClick = false; 
+        
+        // Volta para o cursor da mão ao confirmar o ataque
+        setCursorStyle("url('/cursor-hand.png'), auto");
+        
         let closestId = null; let minDistance = Infinity;
         enemies.forEach((enemy, id) => {
           const dist = getDist(e.clientX, e.clientY, enemy.x, enemy.y);
@@ -176,12 +193,12 @@ export default function OnePieceArena() {
       
       entityIdCounter++;
       if (isRanged) {
-        enemies.set(entityIdCounter, { // Atirador da Marinha
+        enemies.set(entityIdCounter, { 
           type: 'ranged', x, y, radius: 16, color: '#9d4edd', speed: 0.8 + (currentWave * 0.02), hp: 20 * multiplier, maxHp: 20 * multiplier,
           range: 300, attackCooldown: 0, damage: 8 + (currentWave * 2)
         });
       } else {
-        enemies.set(entityIdCounter, { // Marinheiro Rasão
+        enemies.set(entityIdCounter, { 
           type: 'melee', x, y, radius, color: '#e63946', speed: 1.2 + (currentWave * 0.05), hp: 35 * multiplier, maxHp: 35 * multiplier,
           damage: 10 + (currentWave * 2)
         });
@@ -190,7 +207,7 @@ export default function OnePieceArena() {
 
     function spawnStructure() {
       entityIdCounter++;
-      structures.set(entityIdCounter, { // Base da Marinha
+      structures.set(entityIdCounter, { 
         x: 200 + Math.random() * (canvas.width - 400), y: 200 + Math.random() * (canvas.height - 400),
         w: 60, h: 60, hp: 300, maxHp: 300, color: '#457b9d'
       });
@@ -206,7 +223,6 @@ export default function OnePieceArena() {
 
       const pState = gameState.current.player;
       const ctx = canvas.getContext('2d');
-      // Fundo escuro (Mar à noite)
       ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       if (waveState === 'playing') {
@@ -243,7 +259,6 @@ export default function OnePieceArena() {
               target.hp -= pState.attackDamage;
               player.attackCooldown = Math.floor(60 / pState.attackSpeed);
               
-              // Efeito de ataque diferente por classe
               let efColor = pState.classId === 'cortante' ? '#10b981' : (pState.classId === 'atirador' ? '#f59e0b' : '#3b82f6');
               visualEffects.push({ type: 'laser', x1: player.x, y1: player.y, x2: targetCenterX, y2: targetCenterY, life: 10, color: efColor });
             }
@@ -337,7 +352,7 @@ export default function OnePieceArena() {
 
       if (pState.hp <= 0) {
         setAppState('GAMEOVER');
-        return; // Para o loop
+        return; 
       }
 
       frameCount++;
@@ -348,7 +363,6 @@ export default function OnePieceArena() {
 
     animate();
 
-    // Cleanup: Remove os listeners e para a animação quando sair do modo PLAYING
     return () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('mousemove', handleMouseMove);
@@ -460,11 +474,25 @@ export default function OnePieceArena() {
               <p style={{ fontSize: '20px', margin: '10px 0' }}>Nível Final: <b>{hudData.level}</b></p>
             </div>
 
-            <button onClick={() => setAppState('MENU')} style={{ marginTop: '40px', padding: '20px 40px', fontSize: '24px', backgroundColor: 'gold', color: '#000', border: 'none', cursor: 'pointer', fontWeight: 'bold', borderRadius: '50px', textTransform: 'uppercase' }}>
+            <button
+                onClick={() => setAppState('MENU')}
+                style={{
+                    marginTop: '40px',
+                    padding: '20px 40px',
+                    fontSize: '24px',
+                    backgroundColor: 'gold',
+                    color: '#000',
+                    border: 'none',
+                    cursor: 'url(/cursor-hand.png), pointer', // Caminho para a imagem do cursor
+                    fontWeight: 'bold',
+                    borderRadius: '50px',
+                    textTransform: 'uppercase'
+                }}
+            >
                 Tentar Novamente
             </button>
         </div>
       )}
     </div>
   );
-} 
+}
