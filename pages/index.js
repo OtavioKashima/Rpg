@@ -41,16 +41,14 @@ export default function OnePieceArena() {
     }
   }
 
-  useEffect(() => {
-    if (appState !== 'PLAYING') return;
+ // --- CONEXÃO COM O SERVIDOR ---
+ useEffect(() => {
+  if (appState !== 'PLAYING') return;
 
-    // Se estiver no Railway (produção), usa a própria URL do site. 
-    // Se estiver no seu PC, usa o localhost:3001.
-    const SERVER_URL = process.env.NODE_ENV === 'production' 
-      ? window.location.origin 
-      : 'http://localhost:3001';
-
-    socketRef.current = io(SERVER_URL);
+  // Deixe vazio! Ele vai descobrir sozinho que está no Railway e na porta certa.
+  socketRef.current = io(); 
+  
+  socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
     
     socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
     socketRef.current.on('playerHit', (damage) => { gameState.current.player.hp -= damage; gameState.current.player.hitTimer = 10; });
