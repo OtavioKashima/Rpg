@@ -43,7 +43,7 @@ app.prepare().then(() => {
   // --------------------------------------------------
 
   // Liga o servidor unificado!
-  server.listen(PORT, () => {
-    console.log(`> 🏴‍☠️ Navio zarpando! Jogo e Site rodando juntos na porta ${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`> 🏴‍☠️ Navio zarpando! Jogo e Site rodando na porta ${PORT}`);
   });
 });
