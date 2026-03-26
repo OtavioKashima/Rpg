@@ -45,10 +45,9 @@ export default function OnePieceArena() {
   useEffect(() => {
     if (appState !== 'PLAYING') return;
 
-    // Forçamos o uso APENAS de WebSocket, ignorando o HTTP Polling
+    // Conecta automaticamente e garante que o caminho está correto
     socketRef.current = io({
-      transports: ['websocket'],
-      upgrade: false
+      path: '/socket.io/',
     });
 
     socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
