@@ -9,20 +9,20 @@ const CLASSES = {
 
 export default function OnePieceArena() {
   const canvasRef = useRef(null);
-  const [appState, setAppState] = useState('MENU'); 
+  const [appState, setAppState] = useState('MENU');
   const [selectedClass, setSelectedClass] = useState('cortante');
   const [cursorStyle, setCursorStyle] = useState("url('/cursor-hand.png'), auto");
   const [isShopOpen, setIsShopOpen] = useState(false);
   const [hudData, setHudData] = useState({ berris: 0, level: 1, xp: 0, maxXp: 100, wave: '-', hp: 100, maxHp: 100, className: '' });
 
   const gameState = useRef({
-    isShopOpen: false, 
+    isShopOpen: false,
     player: { berris: 0, xp: 0, level: 1, maxXp: 100, attackDamage: 10, attackSpeed: 1.2, maxHp: 100, hp: 100, range: 250, speed: 4, color: '#0055ff' }
   });
 
   const socketRef = useRef(null);
-  const serverWorldRef = useRef({ players: {}, enemies: {} }); 
-  const visualEffectsRef = useRef([]); 
+  const serverWorldRef = useRef({ players: {}, enemies: {} });
+  const visualEffectsRef = useRef([]);
 
   const imagesRef = useRef({
     players: { cortante: null, atirador: null, especialista: null },
@@ -37,31 +37,35 @@ export default function OnePieceArena() {
       pState.level++; pState.xp -= pState.maxXp;
       pState.maxXp = Math.floor(pState.maxXp * 1.5);
       pState.attackDamage += 3; pState.maxHp += 15;
-      pState.hp = pState.maxHp; 
+      pState.hp = pState.maxHp;
     }
   }
 
- // --- CONEXÃO COM O SERVIDOR ---
- useEffect(() => {
-  if (appState !== 'PLAYING') return;
+  // --- CONEXÃO COM O SERVIDOR ---
+  useEffect(() => {
+    if (appState !== 'PLAYING') return;
 
-  // Deixe vazio! Ele vai descobrir sozinho que está no Railway e na porta certa.
-  socketRef.current = io(); 
-  
-  socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
-    
+    // Forçamos o uso APENAS de WebSocket, ignorando o HTTP Polling
+    socketRef.current = io({
+      transports: ['websocket'],
+      upgrade: false
+    });
+
+    socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
+
+
     socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
     socketRef.current.on('playerHit', (damage) => { gameState.current.player.hp -= damage; gameState.current.player.hitTimer = 10; });
     socketRef.current.on('enemyKilled', (reward) => { gainXpAndGold(reward.xp, reward.berris); });
-    
+
     return () => { if (socketRef.current) socketRef.current.disconnect(); };
   }, [appState]);
 
   const buyItem = (itemType) => {
     const p = gameState.current.player;
-    if (itemType === 'weapon' && p.berris >= 50) { p.berris -= 50; p.attackDamage += 5; } 
-    else if (itemType === 'speed' && p.berris >= 30) { p.berris -= 30; p.attackSpeed += 0.3; } 
-    else if (itemType === 'meat' && p.berris >= 20) { p.berris -= 20; p.hp = Math.min(p.hp + 50, p.maxHp); } 
+    if (itemType === 'weapon' && p.berris >= 50) { p.berris -= 50; p.attackDamage += 5; }
+    else if (itemType === 'speed' && p.berris >= 30) { p.berris -= 30; p.attackSpeed += 0.3; }
+    else if (itemType === 'meat' && p.berris >= 20) { p.berris -= 20; p.hp = Math.min(p.hp + 50, p.maxHp); }
     else { alert("Berris insuficientes!"); return; }
     setHudData(prev => ({ ...prev, berris: p.berris, hp: Math.floor(p.hp) }));
   };
@@ -94,9 +98,9 @@ export default function OnePieceArena() {
         img.src = src;
         img.isReady = false; // Flag customizada de segurança
         img.onload = () => { img.isReady = true; };
-        img.onerror = () => { 
-          img.isReady = false; 
-          console.warn(`Aviso: Imagem não encontrada em ${src}. Usando formato circular.`); 
+        img.onerror = () => {
+          img.isReady = false;
+          console.warn(`Aviso: Imagem não encontrada em ${src}. Usando formato circular.`);
         };
         return img;
       };
@@ -152,7 +156,7 @@ export default function OnePieceArena() {
 
       const pState = gameState.current.player;
       const world = serverWorldRef.current;
-      
+
       // DESENHA FUNDO SEGURO
       const bgImage = imagesRef.current.background;
       if (bgImage && bgImage.isReady) {
@@ -162,15 +166,15 @@ export default function OnePieceArena() {
       }
 
       if (player.attackCooldown > 0) player.attackCooldown--;
-      if (pState.hitTimer > 0) pState.hitTimer--; 
+      if (pState.hitTimer > 0) pState.hitTimer--;
 
       if (player.targetId !== null) {
         let target = world.enemies[player.targetId];
-        if (!target) { player.targetId = null; } 
+        if (!target) { player.targetId = null; }
         else {
           const distToTarget = getDist(player.x, player.y, target.x, target.y);
           if (distToTarget <= pState.range) {
-            player.targetX = player.x; player.targetY = player.y; 
+            player.targetX = player.x; player.targetY = player.y;
             if (player.attackCooldown <= 0) {
               if (socketRef.current) socketRef.current.emit('attackEnemy', { targetId: player.targetId, damage: pState.attackDamage });
               player.attackCooldown = Math.floor(60 / pState.attackSpeed);
@@ -184,7 +188,7 @@ export default function OnePieceArena() {
       const dx = player.targetX - player.x; const dy = player.targetY - player.y;
       const distance = Math.hypot(dx, dy);
       let isMoving = false;
-      if (distance > pState.speed) { player.x += (dx / distance) * pState.speed; player.y += (dy / distance) * pState.speed; isMoving = true; } 
+      if (distance > pState.speed) { player.x += (dx / distance) * pState.speed; player.y += (dy / distance) * pState.speed; isMoving = true; }
       else { player.x = player.targetX; player.y = player.targetY; }
       if (isMoving && timestamp - lastEmitTime > 30 && socketRef.current) { socketRef.current.emit('playerMovement', { x: player.x, y: player.y, color: pState.color }); lastEmitTime = timestamp; }
 
@@ -196,7 +200,7 @@ export default function OnePieceArena() {
         ctx.beginPath(); ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
         ctx.fillStyle = pState.hitTimer > 0 ? '#ff0000' : pState.color; ctx.fill();
       }
-      
+
       if (isAwaitingAttackClick) { ctx.beginPath(); ctx.arc(player.x, player.y, pState.range, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = pState.color; ctx.stroke(); }
 
       for (let pId in world.players) {
@@ -211,14 +215,14 @@ export default function OnePieceArena() {
       for (let eId in world.enemies) {
         let enemy = world.enemies[eId];
         let enemyImage = imagesRef.current.enemies.marineMelee;
-        
+
         if (enemyImage && enemyImage.isReady) {
           ctx.drawImage(enemyImage, enemy.x - enemy.radius, enemy.y - enemy.radius, enemy.radius * 2, enemy.radius * 2);
         } else {
           ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
           ctx.fillStyle = enemy.color; ctx.fill();
         }
-        
+
         ctx.fillStyle = 'red'; ctx.fillRect(enemy.x - 15, enemy.y - 25, 30, 4);
         ctx.fillStyle = '#10b981'; ctx.fillRect(enemy.x - 15, enemy.y - 25, 30 * (enemy.hp / enemy.maxHp), 4);
       }
@@ -230,16 +234,16 @@ export default function OnePieceArena() {
     }
     animate(0);
     return () => { cancelAnimationFrame(animationId); window.removeEventListener('contextmenu', handleContextMenu); window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('mousedown', handleMouseDown); };
-  }, [appState]); 
+  }, [appState]);
 
   // --- HTML MANTIDO ---
   return (
     <div style={{ margin: 0, padding: 0, overflow: 'hidden', backgroundColor: '#0f172a', height: '100vh', width: '100vw', fontFamily: 'sans-serif', cursor: cursorStyle }}>
-      {appState === 'MENU' && ( <div style={{ position: 'absolute', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', zIndex: 300, background: 'linear-gradient(to bottom, #1e3a8a, #0f172a)' }}> <h1 style={{ fontSize: '64px', color: 'gold', textShadow: '4px 4px 0px #000', marginBottom: '10px', textAlign: 'center' }}>PIRATE ARENA<br/><span style={{fontSize: '32px', color: '#fff'}}>Multiplayer Online</span></h1> <div style={{ display: 'flex', gap: '20px', marginBottom: '50px', marginTop: '30px' }}> {Object.values(CLASSES).map(cls => ( <div key={cls.id} onClick={() => setSelectedClass(cls.id)} style={{ width: '250px', padding: '20px', borderRadius: '12px', border: `4px solid ${selectedClass === cls.id ? 'gold' : '#334155'}`, backgroundColor: '#1e293b', cursor: 'pointer', transform: selectedClass === cls.id ? 'scale(1.05)' : 'scale(1)' }}> <h3 style={{ margin: '0 0 10px 0', color: cls.color, textAlign: 'center', fontSize: '24px' }}>{cls.name}</h3> <p style={{ fontSize: '14px', color: '#94a3b8', textAlign: 'center', minHeight: '60px' }}>{cls.desc}</p> </div> ))} </div> <button onClick={() => startGame(selectedClass)} style={{ padding: '20px 60px', fontSize: '28px', fontWeight: 'bold', backgroundColor: 'gold', border: 'none', borderRadius: '50px', cursor: 'pointer', boxShadow: '0px 6px 0px #b45309' }}>Zarpar!</button> </div> )}
-      {appState === 'PLAYING' && ( <> <div style={{ position: 'absolute', top: 10, left: 10, color: 'white', backgroundColor: 'rgba(15, 23, 42, 0.85)', padding: '15px', borderRadius: '8px', zIndex: 50, pointerEvents: 'none' }}> <h2 style={{ margin: 0, color: CLASSES[gameState.current.player.classId]?.color }}>{hudData.className}</h2> <div style={{ backgroundColor: '#333', width: '220px', height: '22px', marginTop: '10px' }}><div style={{ backgroundColor: '#ef4444', width: `${Math.max(0, (hudData.hp / hudData.maxHp) * 100)}%`, height: '100%' }} /></div> <p style={{ margin: '5px 0 15px 0', fontSize: '14px', fontWeight: 'bold' }}>{hudData.hp} / {hudData.maxHp} HP</p> <p style={{ margin: '5px 0', color: 'gold', fontWeight: 'bold' }}>💰 Berris: {hudData.berris}</p> <p style={{ margin: '5px 0', color: '#38bdf8', fontWeight: 'bold' }}>⭐ Nível: {hudData.level} (XP: {hudData.xp}/{hudData.maxXp})</p> <p style={{ margin: '15px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>Aperte <b>'B'</b> para Mercado Negro</p> </div>
-      {isShopOpen && ( <div style={{ position: 'absolute', top: '20%', left: '50%', transform: 'translate(-50%, 0)', width: '450px', backgroundColor: '#1e293b', border: '3px solid gold', borderRadius: '12px', padding: '25px', color: 'white', zIndex: 100 }}> <h2 style={{ textAlign: 'center', color: 'gold', marginTop: 0 }}>MERCADO NEGRO</h2> <p style={{ textAlign: 'center', fontSize: '18px' }}>Seus Berris: <b style={{color: 'gold'}}>{hudData.berris}</b></p> <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', backgroundColor: '#0f172a', padding: '10px' }}> <div><h4 style={{ margin: 0, color: '#38bdf8' }}>Melhoria de Arma (+5 Dano)</h4></div> <button onClick={() => buyItem('weapon')} style={{ backgroundColor: 'gold', border: 'none', padding: '5px 15px', cursor: 'pointer', fontWeight: 'bold' }}>50 B</button> </div> <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', backgroundColor: '#0f172a', padding: '10px' }}> <div><h4 style={{ margin: 0, color: '#38bdf8' }}>Treinamento Haki (+0.3 Vel.)</h4></div> <button onClick={() => buyItem('speed')} style={{ backgroundColor: 'gold', border: 'none', padding: '5px 15px', cursor: 'pointer', fontWeight: 'bold' }}>30 B</button> </div> <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#0f172a', padding: '10px' }}> <div><h4 style={{ margin: 0, color: '#ef4444' }}>Carne (+50 HP)</h4></div> <button onClick={() => buyItem('meat')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '5px 15px', cursor: 'pointer', fontWeight: 'bold' }}>20 B</button> </div> <button onClick={() => { gameState.current.isShopOpen = false; setIsShopOpen(false); }} style={{ width: '100%', marginTop: '20px', padding: '10px', cursor: 'pointer' }}>Voltar</button> </div> )}
-      <canvas ref={canvasRef} style={{ display: 'block' }} /> </> )}
-      {appState === 'GAMEOVER' && ( <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(15, 23, 42, 0.95)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'white', zIndex: 200 }}> <h1 style={{ color: '#ef4444', fontSize: '72px', margin: 0 }}>DERROTADO</h1> <button onClick={() => setAppState('MENU')} style={{ marginTop: '40px', padding: '20px 40px', fontSize: '24px', backgroundColor: 'gold', border: 'none', cursor: 'pointer', fontWeight: 'bold', borderRadius: '50px' }}>Tentar Novamente</button> </div> )}
+      {appState === 'MENU' && (<div style={{ position: 'absolute', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', zIndex: 300, background: 'linear-gradient(to bottom, #1e3a8a, #0f172a)' }}> <h1 style={{ fontSize: '64px', color: 'gold', textShadow: '4px 4px 0px #000', marginBottom: '10px', textAlign: 'center' }}>PIRATE ARENA<br /><span style={{ fontSize: '32px', color: '#fff' }}>Multiplayer Online</span></h1> <div style={{ display: 'flex', gap: '20px', marginBottom: '50px', marginTop: '30px' }}> {Object.values(CLASSES).map(cls => (<div key={cls.id} onClick={() => setSelectedClass(cls.id)} style={{ width: '250px', padding: '20px', borderRadius: '12px', border: `4px solid ${selectedClass === cls.id ? 'gold' : '#334155'}`, backgroundColor: '#1e293b', cursor: 'pointer', transform: selectedClass === cls.id ? 'scale(1.05)' : 'scale(1)' }}> <h3 style={{ margin: '0 0 10px 0', color: cls.color, textAlign: 'center', fontSize: '24px' }}>{cls.name}</h3> <p style={{ fontSize: '14px', color: '#94a3b8', textAlign: 'center', minHeight: '60px' }}>{cls.desc}</p> </div>))} </div> <button onClick={() => startGame(selectedClass)} style={{ padding: '20px 60px', fontSize: '28px', fontWeight: 'bold', backgroundColor: 'gold', border: 'none', borderRadius: '50px', cursor: 'pointer', boxShadow: '0px 6px 0px #b45309' }}>Zarpar!</button> </div>)}
+      {appState === 'PLAYING' && (<> <div style={{ position: 'absolute', top: 10, left: 10, color: 'white', backgroundColor: 'rgba(15, 23, 42, 0.85)', padding: '15px', borderRadius: '8px', zIndex: 50, pointerEvents: 'none' }}> <h2 style={{ margin: 0, color: CLASSES[gameState.current.player.classId]?.color }}>{hudData.className}</h2> <div style={{ backgroundColor: '#333', width: '220px', height: '22px', marginTop: '10px' }}><div style={{ backgroundColor: '#ef4444', width: `${Math.max(0, (hudData.hp / hudData.maxHp) * 100)}%`, height: '100%' }} /></div> <p style={{ margin: '5px 0 15px 0', fontSize: '14px', fontWeight: 'bold' }}>{hudData.hp} / {hudData.maxHp} HP</p> <p style={{ margin: '5px 0', color: 'gold', fontWeight: 'bold' }}>💰 Berris: {hudData.berris}</p> <p style={{ margin: '5px 0', color: '#38bdf8', fontWeight: 'bold' }}>⭐ Nível: {hudData.level} (XP: {hudData.xp}/{hudData.maxXp})</p> <p style={{ margin: '15px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>Aperte <b>'B'</b> para Mercado Negro</p> </div>
+        {isShopOpen && (<div style={{ position: 'absolute', top: '20%', left: '50%', transform: 'translate(-50%, 0)', width: '450px', backgroundColor: '#1e293b', border: '3px solid gold', borderRadius: '12px', padding: '25px', color: 'white', zIndex: 100 }}> <h2 style={{ textAlign: 'center', color: 'gold', marginTop: 0 }}>MERCADO NEGRO</h2> <p style={{ textAlign: 'center', fontSize: '18px' }}>Seus Berris: <b style={{ color: 'gold' }}>{hudData.berris}</b></p> <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', backgroundColor: '#0f172a', padding: '10px' }}> <div><h4 style={{ margin: 0, color: '#38bdf8' }}>Melhoria de Arma (+5 Dano)</h4></div> <button onClick={() => buyItem('weapon')} style={{ backgroundColor: 'gold', border: 'none', padding: '5px 15px', cursor: 'pointer', fontWeight: 'bold' }}>50 B</button> </div> <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', backgroundColor: '#0f172a', padding: '10px' }}> <div><h4 style={{ margin: 0, color: '#38bdf8' }}>Treinamento Haki (+0.3 Vel.)</h4></div> <button onClick={() => buyItem('speed')} style={{ backgroundColor: 'gold', border: 'none', padding: '5px 15px', cursor: 'pointer', fontWeight: 'bold' }}>30 B</button> </div> <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#0f172a', padding: '10px' }}> <div><h4 style={{ margin: 0, color: '#ef4444' }}>Carne (+50 HP)</h4></div> <button onClick={() => buyItem('meat')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '5px 15px', cursor: 'pointer', fontWeight: 'bold' }}>20 B</button> </div> <button onClick={() => { gameState.current.isShopOpen = false; setIsShopOpen(false); }} style={{ width: '100%', marginTop: '20px', padding: '10px', cursor: 'pointer' }}>Voltar</button> </div>)}
+        <canvas ref={canvasRef} style={{ display: 'block' }} /> </>)}
+      {appState === 'GAMEOVER' && (<div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(15, 23, 42, 0.95)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'white', zIndex: 200 }}> <h1 style={{ color: '#ef4444', fontSize: '72px', margin: 0 }}>DERROTADO</h1> <button onClick={() => setAppState('MENU')} style={{ marginTop: '40px', padding: '20px 40px', fontSize: '24px', backgroundColor: 'gold', border: 'none', cursor: 'pointer', fontWeight: 'bold', borderRadius: '50px' }}>Tentar Novamente</button> </div>)}
     </div>
   );
 }
