@@ -43,10 +43,19 @@ export default function OnePieceArena() {
 
   useEffect(() => {
     if (appState !== 'PLAYING') return;
-    socketRef.current = io('http://localhost:3001');
+
+    // Se estiver no Railway (produção), usa a própria URL do site. 
+    // Se estiver no seu PC, usa o localhost:3001.
+    const SERVER_URL = process.env.NODE_ENV === 'production' 
+      ? window.location.origin 
+      : 'http://localhost:3001';
+
+    socketRef.current = io(SERVER_URL);
+    
     socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
     socketRef.current.on('playerHit', (damage) => { gameState.current.player.hp -= damage; gameState.current.player.hitTimer = 10; });
     socketRef.current.on('enemyKilled', (reward) => { gainXpAndGold(reward.xp, reward.berris); });
+    
     return () => { if (socketRef.current) socketRef.current.disconnect(); };
   }, [appState]);
 
