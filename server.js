@@ -16,40 +16,51 @@ app.prepare().then(() => {
 
   const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
-  // --- ESTADO GLOBAL DO JOGO (GARANTE A SINCRONIA) ---
+  // ESTADO GLOBAL DO JOGO
   let world = { 
     players: {}, 
     enemies: {}, 
     boss: null,
     wave: 1, 
     killsThisWave: 0, 
-    killsNeeded: 10 // Aumenta a cada wave
+    killsNeeded: 10,
+    enemiesSpawnedThisWave: 0 // <--- NOVO: Controla quantos já nasceram
   };
   let enemyIdCounter = 0;
 
+  // FUNÇÃO DE LIMPEZA GERAL
+  const resetWorld = () => {
+    world.enemies = {};
+    world.boss = null;
+    world.wave = 1;
+    world.killsThisWave = 0;
+    world.killsNeeded = 10;
+    world.enemiesSpawnedThisWave = 0; // Reseta os nascimentos
+    enemyIdCounter = 0;
+  };
+
   io.on('connection', (socket) => {
-    // ... (Conexão do jogador)
+    
     socket.on('playerMovement', (data) => {
-      world.players[socket.id] = { 
-        id: socket.id, x: data.x, y: data.y, color: data.color, 
-        radius: 35 // JOGADORES MAIORES (Antes era ~20)
-      };
+      // --- CÃO DE GUARDA CONTRA RUNS FANTASMAS ---
+      // Se não há nenhum jogador registrado no servidor, MAS tem inimigos vivos
+      // ou a wave está avançada, significa que é uma run que bugou. Limpamos a força!
+      if (Object.keys(world.players).length === 0 && (Object.keys(world.enemies).length > 0 || world.wave > 1)) {
+        resetWorld();
+      }
+
+      world.players[socket.id] = { id: socket.id, x: data.x, y: data.y, color: data.color, radius: 25 };
     });
 
-    // --- LÓGICA DE DANO E ONDAS ---
     socket.on('attackEnemy', (data) => {
-      // 1. Dano no Boss
       if (data.targetId === 'bigmom' && world.boss) {
         world.boss.hp -= data.damage;
         if (world.boss.hp <= 0) {
           world.boss = null;
-          io.emit('gameWon'); // Aviso de vitória para todos!
-          // Reseta o jogo após 5 segundos
-          setTimeout(() => { world.wave = 1; world.killsThisWave = 0; world.killsNeeded = 10; }, 5000);
+          io.emit('gameWon'); 
+          setTimeout(resetWorld, 5000); 
         }
-      } 
-      // 2. Dano nos inimigos normais
-      else if (world.enemies[data.targetId]) {
+      } else if (world.enemies[data.targetId]) {
         const enemy = world.enemies[data.targetId];
         enemy.hp -= data.damage;
         if (enemy.hp <= 0) {
@@ -57,56 +68,80 @@ app.prepare().then(() => {
           socket.emit('enemyKilled', { xp: 20 * world.wave, berris: 15 * world.wave }); 
           
           world.killsThisWave++;
-          // Avança a Wave se bateu a meta
+          // Se completou a Wave
           if (world.killsThisWave >= world.killsNeeded && world.wave < 10) {
             world.wave++;
             world.killsThisWave = 0;
-            world.killsNeeded += 5; // Próxima wave precisa de +5 abates
+            world.killsNeeded = 10 + (world.wave * 5); 
+            world.enemiesSpawnedThisWave = 0; // <--- Zera para começar a nascer a Wave Nova
           }
         }
       }
     });
 
-    socket.on('disconnect', () => { delete world.players[socket.id]; });
+    socket.on('playerDeath', () => {
+      delete world.players[socket.id];
+      if (Object.keys(world.players).length === 0) resetWorld();
+    });
+
+    socket.on('disconnect', () => { 
+      delete world.players[socket.id]; 
+      if (Object.keys(world.players).length === 0) resetWorld();
+    });
   });
 
-  // --- SPAWNER (GERADOR DE INIMIGOS E BOSS) ---
+  // --- SPAWNER INTELIGENTE E LIMITADO ---
   setInterval(() => {
     const playerCount = Object.keys(world.players).length;
-    if (playerCount === 0) return; // Pausa o jogo se não houver ninguém
+    if (playerCount === 0) return;
 
     if (world.wave < 10) {
-      // Inimigos Normais (Escalonam com a Wave)
-      if (Object.keys(world.enemies).length < 15) {
-        const id = 'marine_' + enemyIdCounter++;
-        world.enemies[id] = {
-          x: Math.random() * 1500, y: Math.random() * 1500,
-          radius: 35, // INIMIGOS MAIORES
-          hp: 50 + (world.wave * 20), // ESCALONAMENTO DE VIDA
-          maxHp: 50 + (world.wave * 20),
-          speed: 1.5 + (world.wave * 0.1), // Ficam mais rápidos
-          damage: 2 + (world.wave * 1), // Batem mais forte
-          color: '#ff0000'
-        };
+      const enemiesOnScreen = Object.keys(world.enemies).length;
+      const maxSimultaneous = 15 + (playerCount * 5);
+
+      // Calcula quantos inimigos devem nascer agora
+      // Ele pega o menor valor entre: Faltam para a wave acabar / Espaço na tela / Max 3 por pulso
+      let enemiesToSpawn = Math.min(
+        world.killsNeeded - world.enemiesSpawnedThisWave, 
+        maxSimultaneous - enemiesOnScreen,
+        3 // Nascem até 3 de uma vez para não demorar uma eternidade
+      );
+
+      // Roda o loop para criar a quantidade exata
+      for (let i = 0; i < enemiesToSpawn; i++) {
+        if (world.enemiesSpawnedThisWave < world.killsNeeded) {
+          const id = 'marine_' + enemyIdCounter++;
+          world.enemies[id] = {
+            x: Math.random() * 2000, y: Math.random() * 2000,
+            radius: 30, 
+            hp: 40 + (world.wave * 25), 
+            maxHp: 40 + (world.wave * 25),
+            speed: 1.5 + (world.wave * 0.15),
+            damage: 5 + (world.wave * 2),
+            color: '#ff0000',
+            attackCooldown: 0
+          };
+          world.enemiesSpawnedThisWave++; // <--- Contabiliza que nasceu
+        }
       }
     } else if (world.wave === 10 && !world.boss) {
-      // SPAWN DA BIG MOM NA WAVE 10
       world.boss = {
         id: 'bigmom',
-        x: 750, y: 750, // Fixa no centro do mapa
-        radius: 120, // GIGANTE
-        hp: 5000 * playerCount, // Vida escala com a quantidade de jogadores!
-        maxHp: 5000 * playerCount,
+        x: 1000, y: 1000, 
+        radius: 100, 
+        hp: 4000 * playerCount, 
+        maxHp: 4000 * playerCount,
         attackTimer: 0
       };
     }
   }, 2000);
 
-  // --- LOOP PRINCIPAL (IA E COLISÕES) ---
+  // LOOP PRINCIPAL (IA E MOVIMENTAÇÃO)
   setInterval(() => {
-    // 1. IA dos Inimigos Normais
     for (let eId in world.enemies) {
       let enemy = world.enemies[eId];
+      if (enemy.attackCooldown > 0) enemy.attackCooldown--;
+
       let nearestPlayer = null; let minDist = Infinity;
 
       for (let pId in world.players) {
@@ -121,19 +156,22 @@ app.prepare().then(() => {
           enemy.x += ((nearestPlayer.x - enemy.x) / dist) * enemy.speed;
           enemy.y += ((nearestPlayer.y - enemy.y) / dist) * enemy.speed;
         }
-        if (dist < enemy.radius + nearestPlayer.radius) {
-           io.to(nearestPlayer.id).emit('playerHit', enemy.damage); 
+        
+        // Hitbox curta e com tempo de recarga
+        if (dist < 20) {
+           if (enemy.attackCooldown <= 0) {
+             io.to(nearestPlayer.id).emit('playerHit', enemy.damage); 
+             enemy.attackCooldown = 60; 
+           }
         }
       }
     }
 
-    // 2. IA do Boss (Big Mom) - Ataque Global
     if (world.boss) {
       world.boss.attackTimer++;
-      // A cada 3 segundos (60 frames * 3), ela ataca TODOS os jogadores
-      if (world.boss.attackTimer >= 180) {
+      if (world.boss.attackTimer >= 180) { 
         for (let pId in world.players) {
-          io.to(pId).emit('playerHit', 25); // Dano pesado em área
+          io.to(pId).emit('playerHit', 25);
         }
         world.boss.attackTimer = 0;
       }
