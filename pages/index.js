@@ -1,259 +1,297 @@
 import { useEffect, useRef, useState } from 'react';
-import { io } from 'socket.io-client';
+import io from 'socket.io-client';
 
-const CLASSES = {
-  cortante: { id: 'cortante', name: 'Zoro (Cortante)', color: '#10b981', hp: 150, range: 60, damage: 25, speed: 4.5, attackSpeed: 1.0, desc: 'Corpo-a-corpo letal. Alta vida e muito dano.' },
-  atirador: { id: 'atirador', name: 'kaku (Atirador)', color: '#f59e0b', hp: 70, range: 400, damage: 12, speed: 4, attackSpeed: 1.8, desc: 'Frágil, mas ataca de muito longe e bem rápido.' },
-  especialista: { id: 'especialista', name: 'Nami (Especialista)', color: '#3b82f6', hp: 100, range: 250, damage: 18, speed: 4.2, attackSpeed: 1.2, desc: 'Equilibrada. Ótima para controle de distância.' }
-};
-
-export default function OnePieceArena() {
+export default function Game() {
+  // Estados do Jogo: MENU, PLAYING, GAME_OVER, WON
+  const [appState, setAppState] = useState('MENU'); 
+  const [playerHp, setPlayerHp] = useState(100);
+  
   const canvasRef = useRef(null);
-  const [appState, setAppState] = useState('MENU');
-  const [selectedClass, setSelectedClass] = useState('cortante');
-  const [cursorStyle, setCursorStyle] = useState("url('public/cursor-hand.png'), auto");
-  const [isShopOpen, setIsShopOpen] = useState(false);
-  const [hudData, setHudData] = useState({ berris: 0, level: 1, xp: 0, maxXp: 100, wave: '-', hp: 100, maxHp: 100, className: '' });
-
-  const gameState = useRef({
-    isShopOpen: false,
-    player: { berris: 0, xp: 0, level: 1, maxXp: 100, attackDamage: 10, attackSpeed: 1.2, maxHp: 100, hp: 100, range: 250, speed: 4, color: '#0055ff' }
-  });
-
   const socketRef = useRef(null);
-  const serverWorldRef = useRef({ players: {}, enemies: {} });
-  const visualEffectsRef = useRef([]);
+  const serverWorldRef = useRef(null);
 
-  const imagesRef = useRef({
-    players: { cortante: null, atirador: null, especialista: null },
-    enemies: { marineMelee: null },
-    background: null
-  });
+  // Referências para as Imagens
+  const playerImgRef = useRef(null);
+  const enemyImgRef = useRef(null);
+  const bossImgRef = useRef(null);
 
-  function gainXpAndGold(xpAmount, berrisAmount) {
-    const pState = gameState.current.player;
-    pState.xp += xpAmount; pState.berris += berrisAmount;
-    if (pState.xp >= pState.maxXp) {
-      pState.level++; pState.xp -= pState.maxXp;
-      pState.maxXp = Math.floor(pState.maxXp * 1.5);
-      pState.attackDamage += 3; pState.maxHp += 15;
-      pState.hp = pState.maxHp;
+  // Carrega as imagens assim que o site abre
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const pImg = new Image(); pImg.src = '/player.png'; 
+      const eImg = new Image(); eImg.src = '/marine.png'; 
+      const bImg = new Image(); bImg.src = '/bigmom.jpg'; // A imagem da Big Mom!
+      
+      playerImgRef.current = pImg;
+      enemyImgRef.current = eImg;
+      bossImgRef.current = bImg;
     }
-  }
+  }, []);
 
   // --- CONEXÃO COM O SERVIDOR ---
-useEffect(() => {
+  useEffect(() => {
     if (appState !== 'PLAYING') return;
 
-    // 1. Colocamos o endereço EXATO da sua nuvem
+    // URL do seu Railway (A Conexão Blindada)
     const SOCKET_URL = 'https://rpg-production-c7f8.up.railway.app';
 
-    // 2. Conexão blindada: exige o WebSocket direto
     socketRef.current = io(SOCKET_URL, {
       transports: ['websocket'],
       upgrade: false
     });
-    
-    // 3. Recebe os dados do servidor
-    socketRef.current.on('serverState', (state) => { 
-      serverWorldRef.current = state; 
+
+    // Recebe o mundo atualizado do servidor a 60 frames por segundo
+    socketRef.current.on('serverState', (state) => {
+      serverWorldRef.current = state;
     });
 
-
-    socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
-    socketRef.current.on('playerHit', (damage) => { gameState.current.player.hp -= damage; gameState.current.player.hitTimer = 10; });
-    socketRef.current.on('enemyKilled', (reward) => { gainXpAndGold(reward.xp, reward.berris); });
-
-   return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
-  }, [appState]); // O useEffect precisa saber quando o appState muda
-
-  const buyItem = (itemType) => {
-    const p = gameState.current.player;
-    if (itemType === 'weapon' && p.berris >= 50) { p.berris -= 50; p.attackDamage += 5; }
-    else if (itemType === 'speed' && p.berris >= 30) { p.berris -= 30; p.attackSpeed += 0.3; }
-    else if (itemType === 'meat' && p.berris >= 20) { p.berris -= 20; p.hp = Math.min(p.hp + 50, p.maxHp); }
-    else { alert("Berris insuficientes!"); return; }
-    setHudData(prev => ({ ...prev, berris: p.berris, hp: Math.floor(p.hp) }));
-  };
-
-  const startGame = (classId) => {
-    const cls = CLASSES[classId];
-    gameState.current.player = {
-      ...gameState.current.player,
-      attackDamage: cls.damage, attackSpeed: cls.attackSpeed, maxHp: cls.hp, hp: cls.hp, range: cls.range, speed: cls.speed,
-      color: cls.color, name: cls.name, classId: cls.id, hitTimer: 0
-    };
-    setHudData(prev => ({ ...prev, hp: cls.hp, maxHp: cls.hp, className: cls.name }));
-    setAppState('PLAYING');
-    setIsShopOpen(false);
-    gameState.current.isShopOpen = false;
-  };
-
-  useEffect(() => {
-    if (appState !== 'PLAYING') return;
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    // --- CARREGADOR DE IMAGENS BLINDADO ---
-    const loadImages = () => {
-      const load = (src) => {
-        const img = new Image();
-        img.src = src;
-        img.isReady = false; // Flag customizada de segurança
-        img.onload = () => { img.isReady = true; };
-        img.onerror = () => {
-          img.isReady = false;
-          console.warn(`Aviso: Imagem não encontrada em ${src}. Usando formato circular.`);
-        };
-        return img;
-      };
-
-      imagesRef.current.background = load('/assets/marineford.png');
-      imagesRef.current.players.cortante = load('/assets/players/zoro.png');
-      imagesRef.current.players.atirador = load('/assets/players/kaku.png');
-      imagesRef.current.players.especialista = load('/assets/players/nami.png');
-      imagesRef.current.enemies.marineMelee = load('/assets/enemies/marine_melee.png');
-    };
-    loadImages();
-
-    const player = { x: canvas.width / 2, y: canvas.height / 2, radius: 20, targetX: canvas.width / 2, targetY: canvas.height / 2, attackCooldown: 0, targetId: null };
-    let isAwaitingAttackClick = false;
-    const getDist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
-
-    const handleContextMenu = (e) => {
-      e.preventDefault();
-      if (gameState.current.isShopOpen) return;
-      isAwaitingAttackClick = false; setCursorStyle("url('public/cursor-hand.png'), auto");
-      let targetFound = false;
-      const enemies = serverWorldRef.current.enemies;
-      for (let eId in enemies) { if (getDist(e.clientX, e.clientY, enemies[eId].x, enemies[eId].y) <= enemies[eId].radius + 5) { player.targetId = eId; targetFound = true; break; } }
-      if (!targetFound) { player.targetId = null; player.targetX = e.clientX; player.targetY = e.clientY; }
-    };
-
-    const handleKeyDown = (e) => {
-      if (e.key.toLowerCase() === 'b') { const newState = !gameState.current.isShopOpen; gameState.current.isShopOpen = newState; setIsShopOpen(newState); if (newState) { player.targetId = null; player.targetX = player.x; player.targetY = player.y; } }
-      if (e.key.toLowerCase() === 'a' && !gameState.current.isShopOpen) { isAwaitingAttackClick = true; setCursorStyle("url('public/cursor-sword.png') 0 0, crosshair"); }
-    };
-
-    const handleMouseDown = (e) => {
-      if (e.button === 0 && isAwaitingAttackClick && !gameState.current.isShopOpen) {
-        isAwaitingAttackClick = false; setCursorStyle("url('public/cursor-hand.png'), auto");
-        let closestId = null; let minDistance = Infinity;
-        const enemies = serverWorldRef.current.enemies;
-        for (let eId in enemies) { const dist = getDist(e.clientX, e.clientY, enemies[eId].x, enemies[eId].y); if (dist < minDistance) { minDistance = dist; closestId = eId; } }
-        if (closestId !== null) player.targetId = closestId; else { player.targetId = null; player.targetX = e.clientX; player.targetY = e.clientY; }
-      }
-    };
-
-    window.addEventListener('contextmenu', handleContextMenu);
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('mousedown', handleMouseDown);
-
-    let animationId;
-    let frameCount = 0;
-    let lastEmitTime = 0;
-
-    function animate(timestamp) {
-      animationId = requestAnimationFrame(animate);
-      if (gameState.current.isShopOpen) return;
-
-      const pState = gameState.current.player;
-      const world = serverWorldRef.current;
-
-      // DESENHA FUNDO SEGURO
-      const bgImage = imagesRef.current.background;
-      if (bgImage && bgImage.isReady) {
-        ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
-      } else {
-        ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-
-      if (player.attackCooldown > 0) player.attackCooldown--;
-      if (pState.hitTimer > 0) pState.hitTimer--;
-
-      if (player.targetId !== null) {
-        let target = world.enemies[player.targetId];
-        if (!target) { player.targetId = null; }
-        else {
-          const distToTarget = getDist(player.x, player.y, target.x, target.y);
-          if (distToTarget <= pState.range) {
-            player.targetX = player.x; player.targetY = player.y;
-            if (player.attackCooldown <= 0) {
-              if (socketRef.current) socketRef.current.emit('attackEnemy', { targetId: player.targetId, damage: pState.attackDamage });
-              player.attackCooldown = Math.floor(60 / pState.attackSpeed);
-              let efColor = pState.classId === 'cortante' ? '#10b981' : (pState.classId === 'atirador' ? '#f59e0b' : '#3b82f6');
-              visualEffectsRef.current.push({ type: 'laser', x1: player.x, y1: player.y, x2: target.x, y2: target.y, life: 10, color: efColor });
-            }
-          } else { player.targetX = target.x; player.targetY = target.y; }
+    // Recebe dano dos inimigos/boss
+    socketRef.current.on('playerHit', (damage) => {
+      setPlayerHp((prev) => {
+        const newHp = prev - damage;
+        if (newHp <= 0) {
+          setAppState('GAME_OVER'); // Você morreu!
+          socketRef.current.disconnect();
         }
-      }
+        return newHp;
+      });
+    });
 
-      const dx = player.targetX - player.x; const dy = player.targetY - player.y;
-      const distance = Math.hypot(dx, dy);
-      let isMoving = false;
-      if (distance > pState.speed) { player.x += (dx / distance) * pState.speed; player.y += (dy / distance) * pState.speed; isMoving = true; }
-      else { player.x = player.targetX; player.y = player.targetY; }
-      if (isMoving && timestamp - lastEmitTime > 30 && socketRef.current) { socketRef.current.emit('playerMovement', { x: player.x, y: player.y, color: pState.color }); lastEmitTime = timestamp; }
+    // O servidor avisa que a Big Mom morreu
+    socketRef.current.on('gameWon', () => {
+      setAppState('WON'); // Tela de Vitória!
+      socketRef.current.disconnect();
+    });
 
-      // DESENHA PLAYER SEGURO
-      let myImage = imagesRef.current.players[pState.classId];
-      if (myImage && myImage.isReady) {
-        ctx.drawImage(myImage, player.x - player.radius, player.y - player.radius, player.radius * 2, player.radius * 2);
-      } else {
-        ctx.beginPath(); ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-        ctx.fillStyle = pState.hitTimer > 0 ? '#ff0000' : pState.color; ctx.fill();
-      }
-
-      if (isAwaitingAttackClick) { ctx.beginPath(); ctx.arc(player.x, player.y, pState.range, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = pState.color; ctx.stroke(); }
-
-      for (let pId in world.players) {
-        if (pId === socketRef.current?.id) continue;
-        let other = world.players[pId];
-        ctx.beginPath(); ctx.arc(other.x, other.y, 20, 0, Math.PI * 2);
-        ctx.fillStyle = other.color || '#94a3b8'; ctx.fill();
-        ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
-      }
-
-      // DESENHA INIMIGOS SEGURO
-      for (let eId in world.enemies) {
-        let enemy = world.enemies[eId];
-        let enemyImage = imagesRef.current.enemies.marineMelee;
-
-        if (enemyImage && enemyImage.isReady) {
-          ctx.drawImage(enemyImage, enemy.x - enemy.radius, enemy.y - enemy.radius, enemy.radius * 2, enemy.radius * 2);
-        } else {
-          ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
-          ctx.fillStyle = enemy.color; ctx.fill();
-        }
-
-        ctx.fillStyle = 'red'; ctx.fillRect(enemy.x - 15, enemy.y - 25, 30, 4);
-        ctx.fillStyle = '#10b981'; ctx.fillRect(enemy.x - 15, enemy.y - 25, 30 * (enemy.hp / enemy.maxHp), 4);
-      }
-
-      const vfx = visualEffectsRef.current;
-      for (let i = vfx.length - 1; i >= 0; i--) { const effect = vfx[i]; if (effect.type === 'laser') { ctx.beginPath(); ctx.moveTo(effect.x1, effect.y1); ctx.lineTo(effect.x2, effect.y2); ctx.lineWidth = effect.life > 5 ? 4 : 2; ctx.strokeStyle = effect.color; ctx.stroke(); } effect.life--; if (effect.life <= 0) vfx.splice(i, 1); }
-      if (pState.hp <= 0) { setAppState('GAMEOVER'); return; }
-      frameCount++; if (frameCount % 15 === 0) { setHudData({ berris: pState.berris, level: pState.level, xp: pState.xp, maxXp: pState.maxXp, wave: '-', hp: Math.floor(pState.hp), maxHp: pState.maxHp, className: pState.name }); }
-    }
-    animate(0);
-    return () => { cancelAnimationFrame(animationId); window.removeEventListener('contextmenu', handleContextMenu); window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('mousedown', handleMouseDown); };
+    // A "Vassoura": Limpa a conexão se o jogador sair da tela
+    return () => {
+      if (socketRef.current) socketRef.current.disconnect();
+    };
   }, [appState]);
 
-  // --- HTML MANTIDO ---
+  // --- LOOP DE DESENHO (RENDERIZAÇÃO) ---
+  useEffect(() => {
+    if (appState !== 'PLAYING') return;
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let animationFrameId;
+
+    const render = () => {
+      const state = serverWorldRef.current;
+      if (!state) {
+        animationFrameId = requestAnimationFrame(render);
+        return;
+      }
+
+      // 1. Limpa o fundo do mapa (Grama)
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#228B22'; 
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 2. Desenha a Big Mom (Boss)
+      if (state.boss) {
+        const boss = state.boss;
+        const bImg = bossImgRef.current;
+        if (bImg && bImg.complete) {
+          ctx.drawImage(bImg, boss.x - boss.radius, boss.y - boss.radius, boss.radius * 2, boss.radius * 2);
+        } else {
+          // Fallback caso a imagem não carregue
+          ctx.beginPath();
+          ctx.arc(boss.x, boss.y, boss.radius, 0, Math.PI * 2);
+          ctx.fillStyle = 'purple';
+          ctx.fill();
+        }
+        
+        // Barra de Vida da Big Mom
+        ctx.fillStyle = 'black';
+        ctx.fillRect(boss.x - 100, boss.y - boss.radius - 20, 200, 15);
+        ctx.fillStyle = 'red';
+        ctx.fillRect(boss.x - 100, boss.y - boss.radius - 20, (boss.hp / boss.maxHp) * 200, 15);
+      }
+
+      // 3. Desenha Inimigos Normais
+      for (let eId in state.enemies) {
+        const enemy = state.enemies[eId];
+        const eImg = enemyImgRef.current;
+        if (eImg && eImg.complete) {
+          ctx.drawImage(eImg, enemy.x - enemy.radius, enemy.y - enemy.radius, enemy.radius * 2, enemy.radius * 2);
+        } else {
+          ctx.beginPath();
+          ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+          ctx.fillStyle = 'red';
+          ctx.fill();
+        }
+        // Barra de Vida do Inimigo
+        ctx.fillStyle = 'black';
+        ctx.fillRect(enemy.x - 25, enemy.y - enemy.radius - 10, 50, 5);
+        ctx.fillStyle = 'red';
+        ctx.fillRect(enemy.x - 25, enemy.y - enemy.radius - 10, (enemy.hp / enemy.maxHp) * 50, 5);
+      }
+
+      // 4. Desenha os Jogadores (Multiplayer)
+      for (let pId in state.players) {
+        const player = state.players[pId];
+        const pImg = playerImgRef.current;
+        if (pImg && pImg.complete) {
+          ctx.drawImage(pImg, player.x - player.radius, player.y - player.radius, player.radius * 2, player.radius * 2);
+        } else {
+          ctx.beginPath();
+          ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+          ctx.fillStyle = 'blue';
+          ctx.fill();
+        }
+        
+        // Mostra qual boneco é o SEU
+        if (socketRef.current && pId === socketRef.current.id) {
+          ctx.fillStyle = 'yellow';
+          ctx.font = '16px Arial';
+          ctx.fillText('Você', player.x - 18, player.y - player.radius - 10);
+        }
+      }
+
+      // 5. Interface (UI) - Waves e Abates
+      ctx.fillStyle = 'white';
+      ctx.shadowColor = "black";
+      ctx.shadowBlur = 4;
+      ctx.shadowLineWidth = 3;
+
+      if (state.wave < 10) {
+        ctx.font = 'bold 24px Arial';
+        ctx.fillText(`WAVE: ${state.wave} / 10`, 20, 40);
+        ctx.fillText(`Abates: ${state.killsThisWave} / ${state.killsNeeded}`, 20, 70);
+      } else {
+        ctx.fillStyle = '#ff4444';
+        ctx.font = 'bold 36px Arial';
+        ctx.fillText(`⚠️ BOSS FIGHT: BIG MOM ⚠️`, 20, 50);
+      }
+      ctx.shadowBlur = 0; // Desliga a sombra para não bugar outros desenhos
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [appState]);
+
+  // --- CONTROLES DE MOVIMENTO E ATAQUE ---
+  const handleMouseMove = (e) => {
+    if (appState !== 'PLAYING' || !socketRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    
+    // Calcula a posição real do mouse dentro do canvas escalado
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+
+    socketRef.current.emit('playerMovement', { x, y, color: 'blue' });
+  };
+
+  const handleMouseClick = (e) => {
+    if (appState !== 'PLAYING' || !socketRef.current) return;
+    const state = serverWorldRef.current;
+    if (!state) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
+
+    const myDamage = 25; // Seu dano por clique
+
+    // 1. Tenta atacar o Boss primeiro (prioridade)
+    if (state.boss) {
+      const boss = state.boss;
+      const dist = Math.hypot(boss.x - clickX, boss.y - clickY);
+      if (dist <= boss.radius) {
+        socketRef.current.emit('attackEnemy', { targetId: 'bigmom', damage: myDamage });
+        return; 
+      }
+    }
+
+    // 2. Se não clicou no boss, tenta atacar inimigos
+    for (let eId in state.enemies) {
+      const enemy = state.enemies[eId];
+      const dist = Math.hypot(enemy.x - clickX, enemy.y - clickY);
+      if (dist <= enemy.radius) {
+        socketRef.current.emit('attackEnemy', { targetId: eId, damage: myDamage });
+        break; // Ataca apenas 1 inimigo por clique
+      }
+    }
+  };
+
+  // --- TELAS VISUAIS ---
+  if (appState === 'MENU') {
+    return (
+      <div style={styles.container}>
+        <h1 style={styles.title}>ONE PIECE: SURVIVOR</h1>
+        <button style={styles.button} onClick={() => { setAppState('PLAYING'); setPlayerHp(100); }}>
+          ZARPAR!
+        </button>
+      </div>
+    );
+  }
+
+  if (appState === 'GAME_OVER') {
+    return (
+      <div style={styles.container}>
+        <h1 style={{...styles.title, color: 'red'}}>VOCÊ FOI DERROTADO!</h1>
+        <button style={styles.button} onClick={() => setAppState('MENU')}>
+          TENTAR NOVAMENTE
+        </button>
+      </div>
+    );
+  }
+
+  if (appState === 'WON') {
+    return (
+      <div style={styles.container}>
+        <h1 style={{...styles.title, color: 'gold'}}>VITÓRIA! A BIG MOM CAIU!</h1>
+        <button style={styles.button} onClick={() => setAppState('MENU')}>
+          JOGAR NOVAMENTE
+        </button>
+      </div>
+    );
+  }
+
+  // --- TELA DO JOGO (CANVAS) ---
   return (
-    <div style={{ margin: 0, padding: 0, overflow: 'hidden', backgroundColor: '#0f172a', height: '100vh', width: '100vw', fontFamily: 'sans-serif', cursor: cursorStyle }}>
-      {appState === 'MENU' && (<div style={{ position: 'absolute', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', zIndex: 300, background: 'linear-gradient(to bottom, #1e3a8a, #0f172a)' }}> <h1 style={{ fontSize: '64px', color: 'gold', textShadow: '4px 4px 0px #000', marginBottom: '10px', textAlign: 'center' }}>PIRATE ARENA<br /><span style={{ fontSize: '32px', color: '#fff' }}>Multiplayer Online</span></h1> <div style={{ display: 'flex', gap: '20px', marginBottom: '50px', marginTop: '30px' }}> {Object.values(CLASSES).map(cls => (<div key={cls.id} onClick={() => setSelectedClass(cls.id)} style={{ width: '250px', padding: '20px', borderRadius: '12px', border: `4px solid ${selectedClass === cls.id ? 'gold' : '#334155'}`, backgroundColor: '#1e293b', cursor: 'pointer', transform: selectedClass === cls.id ? 'scale(1.05)' : 'scale(1)' }}> <h3 style={{ margin: '0 0 10px 0', color: cls.color, textAlign: 'center', fontSize: '24px' }}>{cls.name}</h3> <p style={{ fontSize: '14px', color: '#94a3b8', textAlign: 'center', minHeight: '60px' }}>{cls.desc}</p> </div>))} </div> <button onClick={() => startGame(selectedClass)} style={{ padding: '20px 60px', fontSize: '28px', fontWeight: 'bold', backgroundColor: 'gold', border: 'none', borderRadius: '50px', cursor: 'pointer', boxShadow: '0px 6px 0px #b45309' }}>Zarpar!</button> </div>)}
-      {appState === 'PLAYING' && (<> <div style={{ position: 'absolute', top: 10, left: 10, color: 'white', backgroundColor: 'rgba(15, 23, 42, 0.85)', padding: '15px', borderRadius: '8px', zIndex: 50, pointerEvents: 'none' }}> <h2 style={{ margin: 0, color: CLASSES[gameState.current.player.classId]?.color }}>{hudData.className}</h2> <div style={{ backgroundColor: '#333', width: '220px', height: '22px', marginTop: '10px' }}><div style={{ backgroundColor: '#ef4444', width: `${Math.max(0, (hudData.hp / hudData.maxHp) * 100)}%`, height: '100%' }} /></div> <p style={{ margin: '5px 0 15px 0', fontSize: '14px', fontWeight: 'bold' }}>{hudData.hp} / {hudData.maxHp} HP</p> <p style={{ margin: '5px 0', color: 'gold', fontWeight: 'bold' }}>💰 Berris: {hudData.berris}</p> <p style={{ margin: '5px 0', color: '#38bdf8', fontWeight: 'bold' }}>⭐ Nível: {hudData.level} (XP: {hudData.xp}/{hudData.maxXp})</p> <p style={{ margin: '15px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>Aperte <b>'B'</b> para Mercado Negro</p> </div>
-        {isShopOpen && (<div style={{ position: 'absolute', top: '20%', left: '50%', transform: 'translate(-50%, 0)', width: '450px', backgroundColor: '#1e293b', border: '3px solid gold', borderRadius: '12px', padding: '25px', color: 'white', zIndex: 100 }}> <h2 style={{ textAlign: 'center', color: 'gold', marginTop: 0 }}>MERCADO NEGRO</h2> <p style={{ textAlign: 'center', fontSize: '18px' }}>Seus Berris: <b style={{ color: 'gold' }}>{hudData.berris}</b></p> <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', backgroundColor: '#0f172a', padding: '10px' }}> <div><h4 style={{ margin: 0, color: '#38bdf8' }}>Melhoria de Arma (+5 Dano)</h4></div> <button onClick={() => buyItem('weapon')} style={{ backgroundColor: 'gold', border: 'none', padding: '5px 15px', cursor: 'pointer', fontWeight: 'bold' }}>50 B</button> </div> <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', backgroundColor: '#0f172a', padding: '10px' }}> <div><h4 style={{ margin: 0, color: '#38bdf8' }}>Treinamento Haki (+0.3 Vel.)</h4></div> <button onClick={() => buyItem('speed')} style={{ backgroundColor: 'gold', border: 'none', padding: '5px 15px', cursor: 'pointer', fontWeight: 'bold' }}>30 B</button> </div> <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#0f172a', padding: '10px' }}> <div><h4 style={{ margin: 0, color: '#ef4444' }}>Carne (+50 HP)</h4></div> <button onClick={() => buyItem('meat')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '5px 15px', cursor: 'pointer', fontWeight: 'bold' }}>20 B</button> </div> <button onClick={() => { gameState.current.isShopOpen = false; setIsShopOpen(false); }} style={{ width: '100%', marginTop: '20px', padding: '10px', cursor: 'pointer' }}>Voltar</button> </div>)}
-        <canvas ref={canvasRef} style={{ display: 'block' }} /> </>)}
-      {appState === 'GAMEOVER' && (<div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(15, 23, 42, 0.95)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'white', zIndex: 200 }}> <h1 style={{ color: '#ef4444', fontSize: '72px', margin: 0 }}>DERROTADO</h1> <button onClick={() => setAppState('MENU')} style={{ marginTop: '40px', padding: '20px 40px', fontSize: '24px', backgroundColor: 'gold', border: 'none', cursor: 'pointer', fontWeight: 'bold', borderRadius: '50px' }}>Tentar Novamente</button> </div>)}
+    <div style={styles.gameContainer}>
+      <div style={styles.hpBarContainer}>
+         <div style={{...styles.hpBar, width: `${Math.max(0, playerHp)}%`}}></div>
+         <span style={styles.hpText}>Seu HP: {playerHp}</span>
+      </div>
+      <canvas
+        ref={canvasRef}
+        width={1500}
+        height={1500}
+        style={styles.canvas}
+        onMouseMove={handleMouseMove}
+        onMouseDown={handleMouseClick}
+      />
     </div>
   );
 }
+
+// --- ESTILOS CSS ---
+const styles = {
+  container: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: '#111', color: 'white' },
+  title: { fontSize: '48px', marginBottom: '20px', textShadow: '2px 2px 4px #000' },
+  button: { padding: '15px 30px', fontSize: '24px', cursor: 'pointer', backgroundColor: '#ff9900', border: 'none', borderRadius: '10px', fontWeight: 'bold' },
+  gameContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#222', minHeight: '100vh', overflow: 'hidden' },
+  canvas: {
+    border: '5px solid #333',
+    cursor: 'crosshair', // <- CORRIGE O ERRO 404 DO CURSOR AQUI! UMA MIRA PERFEITA!
+    backgroundColor: '#228B22',
+    maxWidth: '100%',
+    maxHeight: '85vh', 
+    objectFit: 'contain' // Garante que não vai ficar distorcido no PC dos outros
+  },
+  hpBarContainer: { width: '80%', height: '30px', backgroundColor: '#333', border: '2px solid white', margin: '15px', position: 'relative', borderRadius: '5px', overflow: 'hidden' },
+  hpBar: { height: '100%', backgroundColor: '#32cd32', transition: 'width 0.2s ease' },
+  hpText: { position: 'absolute', top: '4px', left: '50%', transform: 'translateX(-50%)', color: 'white', fontWeight: 'bold', textShadow: '1px 1px 2px black', fontSize: '18px' }
+};
