@@ -42,11 +42,13 @@ export default function OnePieceArena() {
   }
 
   // --- CONEXÃO COM O SERVIDOR ---
- useEffect(() => {
+useEffect(() => {
     if (appState !== 'PLAYING') return;
 
-    // Conecta automaticamente usando a mesma rota do site
-    socketRef.current = io(); 
+    // Exige o WebSocket desde o primeiro milissegundo!
+    socketRef.current = io({
+      transports: ['websocket']
+    });
     
     socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
 
