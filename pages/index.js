@@ -45,20 +45,31 @@ export default function OnePieceArena() {
 useEffect(() => {
     if (appState !== 'PLAYING') return;
 
-    // Exige o WebSocket desde o primeiro milissegundo!
-    socketRef.current = io({
-      transports: ['websocket']
+    // 1. Colocamos o endereço EXATO da sua nuvem
+    const SOCKET_URL = 'https://rpg-production-c7f8.up.railway.app';
+
+    // 2. Conexão blindada: exige o WebSocket direto
+    socketRef.current = io(SOCKET_URL, {
+      transports: ['websocket'],
+      upgrade: false
     });
     
-    socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
+    // 3. Recebe os dados do servidor
+    socketRef.current.on('serverState', (state) => { 
+      serverWorldRef.current = state; 
+    });
 
 
     socketRef.current.on('serverState', (state) => { serverWorldRef.current = state; });
     socketRef.current.on('playerHit', (damage) => { gameState.current.player.hp -= damage; gameState.current.player.hitTimer = 10; });
     socketRef.current.on('enemyKilled', (reward) => { gainXpAndGold(reward.xp, reward.berris); });
 
-    return () => { if (socketRef.current) socketRef.current.disconnect(); };
-  }, [appState]);
+   return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, [appState]); // O useEffect precisa saber quando o appState muda
 
   const buyItem = (itemType) => {
     const p = gameState.current.player;
