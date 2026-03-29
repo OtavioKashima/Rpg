@@ -11,7 +11,7 @@ export default function OnePieceArena() {
   const canvasRef = useRef(null);
   const [appState, setAppState] = useState('MENU');
   const [selectedClass, setSelectedClass] = useState('cortante');
-  const [cursorStyle, setCursorStyle] = useState("url('/cursor-hand.png'), auto");
+  const [cursorStyle, setCursorStyle] = useState("url('public/cursor-hand.png'), auto");
   const [isShopOpen, setIsShopOpen] = useState(false);
   const [hudData, setHudData] = useState({ berris: 0, level: 1, xp: 0, maxXp: 100, wave: '-', hp: 100, maxHp: 100, className: '' });
 
@@ -119,7 +119,7 @@ export default function OnePieceArena() {
     const handleContextMenu = (e) => {
       e.preventDefault();
       if (gameState.current.isShopOpen) return;
-      isAwaitingAttackClick = false; setCursorStyle("url('/cursor-hand.png'), auto");
+      isAwaitingAttackClick = false; setCursorStyle("url('/public/cursor-hand.png'), auto");
       let targetFound = false;
       const enemies = serverWorldRef.current.enemies;
       for (let eId in enemies) { if (getDist(e.clientX, e.clientY, enemies[eId].x, enemies[eId].y) <= enemies[eId].radius + 5) { player.targetId = eId; targetFound = true; break; } }
@@ -128,12 +128,12 @@ export default function OnePieceArena() {
 
     const handleKeyDown = (e) => {
       if (e.key.toLowerCase() === 'b') { const newState = !gameState.current.isShopOpen; gameState.current.isShopOpen = newState; setIsShopOpen(newState); if (newState) { player.targetId = null; player.targetX = player.x; player.targetY = player.y; } }
-      if (e.key.toLowerCase() === 'a' && !gameState.current.isShopOpen) { isAwaitingAttackClick = true; setCursorStyle("url('/cursor-sword.png') 0 0, crosshair"); }
+      if (e.key.toLowerCase() === 'a' && !gameState.current.isShopOpen) { isAwaitingAttackClick = true; setCursorStyle("url('/public/cursor-sword.png') 0 0, crosshair"); }
     };
 
     const handleMouseDown = (e) => {
       if (e.button === 0 && isAwaitingAttackClick && !gameState.current.isShopOpen) {
-        isAwaitingAttackClick = false; setCursorStyle("url('/cursor-hand.png'), auto");
+        isAwaitingAttackClick = false; setCursorStyle("url('/public/cursor-hand.png'), auto");
         let closestId = null; let minDistance = Infinity;
         const enemies = serverWorldRef.current.enemies;
         for (let eId in enemies) { const dist = getDist(e.clientX, e.clientY, enemies[eId].x, enemies[eId].y); if (dist < minDistance) { minDistance = dist; closestId = eId; } }
